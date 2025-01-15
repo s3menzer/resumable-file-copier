@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Unittest",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "purpose": ["debug-test"],
+            "justMyCode": true,
+            "env": {},
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
