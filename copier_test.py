@@ -103,28 +103,3 @@ class TestWithVirtualFileSystem(unittest.TestCase):
         assert _m.median() == 20
         _m.add(40)
         assert _m.median() == 30
-
-
-# c = Copier(check_all_files=False)
-# _pos = c.find_resume_position(
-#     "o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.111__",
-#     block_size=1024,
-# )
-# print(_pos)
-
-# c.copy_file_with_resume(
-#     r"d:\projects\IAV\tuner_middleware\RF-CATCHER\recordings\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.114",
-#     r"o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.114",
-# )
-
-
-# test_find_resume_position_in_first_half()
-# test_find_resume_position_in_second_half()
-
-if __name__ == "__main__":
-    # unittest.main()
-    c = Copier(dry_run=False)
-    c.copy_directory(
-        r"d:\projects\IAV\tuner_middleware\RF-CATCHER\recordings\DAB-DAB_S-ANHALT_to_SACHSEN_MDR",
-        r"o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR",
-    )

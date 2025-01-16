@@ -9,6 +9,21 @@ import numpy as np
 import json
 from datetime import datetime, timedelta
 import pytz
+import argparse
+import textwrap
+from pprint import pprint
+
+
+class CopyMode(Enum):
+    NEW_FILES_ONLY = 1
+    ALL_FILES = 2
+
+
+class FileStatus(Enum):
+    NEW = 1
+    CACHED = 2
+    PARTLY = 3
+    DONE = 4
 
 
 class DirectoryCache:
@@ -40,13 +55,38 @@ class DirectoryCache:
 
         return {}
 
-    def is_done(self, destination_file: str) -> bool:
-        return os.path.isfile(destination_file) and self._cache.get(
-            destination_file, 0.0
-        ) == os.path.getmtime(destination_file)
+    def is_done(
+        self, *, source_file, destination_file: str, copy_mode: CopyMode
+    ) -> FileStatus:
+        _ts_cache = self._cache.get(destination_file, 0.0)
 
-    def set_done(self, destination_file: str) -> None:
-        self._cache[destination_file] = os.path.getmtime(destination_file)
+        if copy_mode == CopyMode.NEW_FILES_ONLY:
+            if _ts_cache == os.path.getmtime(source_file):
+                return FileStatus.CACHED
+            else:
+                return FileStatus.NEW
+        elif copy_mode == CopyMode.ALL_FILES:
+            if os.path.isfile(destination_file):
+                if _ts_cache == os.path.getmtime(destination_file):
+                    return FileStatus.DONE
+                else:
+                    return FileStatus.PARTLY
+            else:
+                return FileStatus.NEW
+
+        if os.path.isfile(destination_file):
+            if _ts_cache == os.path.getmtime(source_file):
+                return True
+
+        return False
+        # return os.path.isfile(destination_file) and self._cache.get(
+        #     destination_file, 0.0
+        # ) == os.path.getmtime(destination_file)
+
+    def set_done(self, *, source_file: str, destination_file: str) -> None:
+        _ts = os.path.getmtime(source_file)
+        os.utime(destination_file, (_ts, _ts))
+        self._cache[destination_file] = _ts
         self.serialize_to_file()
 
 
@@ -69,13 +109,8 @@ class RollingMedian:
         return np.median(self.window)
 
 
-class CopyMode(Enum):
-    NEW_FILES_ONLY = 1
-    ALL_FILES = 2
-
-
 class Copier:
-    def __init__(self, block_size=1024, dry_run: bool = False) -> None:
+    def __init__(self, block_size=2048, dry_run: bool = False) -> None:
         self.__abort = False
         self.__dry_run = dry_run
         self.__block_size = block_size
@@ -89,8 +124,24 @@ class Copier:
 
         signal.signal(signal.SIGINT, signal_handler)
 
+        if dry_run:
+            print("\nDry run.")
+
+    def copy(self, *, src: str, dst: str) -> None:
+        if os.path.isfile(src):
+            _dest = (
+                os.path.join(dst, os.path.basename(src)) if os.path.isdir(dst) else dst
+            )
+            self.copy_file(src=src, dst=_dest)
+        elif os.path.isfile(dst):
+            print(
+                f"Error: destination has to be a directory name since source is a directory"
+            )
+        else:
+            self.__copy_directory(src=src, dest=dst)
+
     def _find_resume_position(
-        self, source_file: str, destination_file: str, total_size: int
+        self, *, source_file: str, destination_file: str, total_size: int
     ) -> int:
         """
         Finds the position in the destination file where the content starts to be different (mostly zero bytes) compared to the source file.
@@ -110,7 +161,9 @@ class Copier:
             return block_src != block_dst
 
         def is_file_equal(f_src: BinaryIO, f_dst: BinaryIO, file_size: int) -> bool:
-            return not is_block_different(f_src, f_dst, file_size - _block_size)
+            _mismatch_start = is_block_different(f_src, f_dst, file_size - _block_size)
+            _mismatch_end = is_block_different(f_src, f_dst, 0)
+            return _mismatch_start or _mismatch_start
 
         start = 0
         end = total_size
@@ -129,7 +182,7 @@ class Copier:
 
         return start
 
-    def copy_directory(self, src: str, dest: str):
+    def __copy_directory(self, *, src: str, dest: str):
         self.__copy_directory_internal(src, dest, CopyMode.NEW_FILES_ONLY)
         self.__copy_directory_internal(src, dest, CopyMode.ALL_FILES)
 
@@ -142,76 +195,86 @@ class Copier:
                     if self.__abort:
                         return
 
-                    _file_path_src = os.path.join(_root, _file)
-                    _file_path_dest = os.path.join(dest, _rel_path_src, _file)
+                    _file_path_src = os.path.normpath(os.path.join(_root, _file))
+                    _file_path_dest = os.path.normpath(
+                        os.path.join(dest, _rel_path_src, _file)
+                    )
 
-                    if self.__directory_cache.is_done(_file_path_dest):
-                        print(f"File cached: {os.path.join(_rel_path_src, _file)}")
+                    _src_file_rel = os.path.normpath(os.path.join(_rel_path_src, _file))
+                    _file_status = self.__directory_cache.is_done(
+                        source_file=_file_path_src,
+                        destination_file=_file_path_dest,
+                        copy_mode=copy_mode,
+                    )
+
+                    if _file_status == FileStatus.CACHED:
+                        print(f"File cached: {_src_file_rel}")
                         continue
 
-                    if copy_mode == CopyMode.NEW_FILES_ONLY and not os.path.isfile(
-                        _file_path_dest
-                    ):
-                        print(f"Copy new file: {os.path.join(_rel_path_src, _file)}")
-                        self.copy_file(_file_path_src, _file_path_dest)
-                    elif copy_mode == CopyMode.ALL_FILES:
-                        print(
-                            f"Check existing file: {os.path.join(_rel_path_src, _file)}"
-                        )
-                        self.copy_file(_file_path_src, _file_path_dest)
+                    elif _file_status == FileStatus.NEW:
+                        # print(f"Copy new file: {_src_file_rel}")
+                        self.copy_file(src=_file_path_src, dst=_file_path_dest)
+                    elif _file_status == FileStatus.PARTLY:
+                        # print(f"Check existing file: {_src_file_rel}")
+                        self.copy_file(src=_file_path_src, dst=_file_path_dest)
+                    elif _file_status == FileStatus.DONE:
+                        print(f"File done: {_src_file_rel}")
+                    else:
+                        print(f"File status {_file_status} not implemented yet")
 
         except Exception as e:
             print(f"An error has occurred: {e}")
             traceback.print_exc()
 
-    def copy_file(self, source_file: str, destination_file: str):
+    def copy_file(self, *, src: str, dst: str):
         """
         Copies a file to the destination, resuming from where the copy was interrupted if possible.
         :param source_file: Path to the source file.
         :param destination_file: Path to the destination file.
         """
-        total_size = os.path.getsize(source_file)
+        total_size = os.path.getsize(src)
 
         # Determine the resume position
-        if os.path.exists(destination_file):
+        if os.path.exists(dst):
+            print(f"Files exists remotely, find resume position {dst}")
             resume_position = self._find_resume_position(
-                source_file, destination_file, total_size
+                source_file=src, destination_file=dst, total_size=total_size
             )
         else:
+            print(f"Files does not exist remotely {dst}")
             resume_position = 0
 
         if resume_position < 0:
-            self.__directory_cache.set_done(destination_file)
+            self.__directory_cache.set_done(source_file=src, destination_file=dst)
             print("Files are equal")
             return
         if resume_position == 0:
-            print(f"File is new: {os.path.basename(destination_file)}")
+            pass
+            # print(f"File is new: {os.path.basename(dst)}")
         else:
             _percentage = int((resume_position * 100) // total_size)
-            print(
-                f"File is incomplete ({_percentage:02d}%): {os.path.basename(destination_file)}"
-            )
+            print(f"File is incomplete ({_percentage:02d}%): {os.path.basename(dst)}")
 
         if self.__dry_run:
             return
 
         # Ensure the destination directory exists
-        destination_dir = os.path.dirname(destination_file)
+        destination_dir = os.path.dirname(dst)
         if not os.path.exists(destination_dir):
             os.makedirs(destination_dir)
 
         print(
-            f"File {os.path.basename(source_file)} mismatch. Start copying from {resume_position=} {total_size=}"
+            f"File {os.path.basename(src)} mismatch. Start copying from {resume_position=} {total_size=}"
         )
         # return
 
-        with open(source_file, "rb") as src, open(
-            destination_file, "r+b" if resume_position > 0 else "wb"
-        ) as dst:
+        with open(src, "rb") as f_src, open(
+            dst, "r+b" if resume_position > 0 else "wb"
+        ) as f_dst:
             # Skip to the resume position in both files
             if resume_position > 0:
-                src.seek(resume_position)
-                dst.seek(resume_position)
+                f_src.seek(resume_position)
+                f_dst.seek(resume_position)
 
             # Copy the remainder of the file with progress
             copied_size = resume_position
@@ -220,10 +283,10 @@ class Copier:
             copied_size_since_last_progress_shown = 0
 
             while not self.__abort:
-                chunk = src.read(1024 * 1024)  # Read in 1 MB chunks
+                chunk = f_src.read(5 * 1024 * 1024)  # Read in 5 MB chunks
                 if not chunk:
                     break
-                dst.write(chunk)
+                f_dst.write(chunk)
                 _length_chunk = len(chunk)
                 copied_size += _length_chunk
                 progress = (copied_size * 100) // total_size
@@ -257,8 +320,8 @@ class Copier:
                     )
 
         if not self.__abort:
-            self.__directory_cache.set_done(destination_file)
-            print(f"File copied successfully: {os.path.basename(source_file)}.")
+            self.__directory_cache.set_done(source_file=src, destination_file=dst)
+            print(f"File copied successfully: {os.path.basename(src)}.")
 
 
 # if __name__ == "__main__":
@@ -276,3 +339,48 @@ class Copier:
 #             c.copy_file_with_resume(source_path, destination_path)
 #         except Exception as e:
 #             print(f"An error occurred: {e}")
+
+
+def parse_commandline() -> None:
+    global _args
+
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=textwrap.dedent("""resumable file copier"""),
+    )
+
+    # add expected arguments
+    parser.add_argument(
+        "--src", dest="src", required=True, help="source file or folder"
+    )
+    parser.add_argument(
+        "--dst", dest="dst", required=True, help="destination file or folder"
+    )
+    parser.add_argument(
+        "-d",
+        "--dry",
+        dest="dry",
+        required=False,
+        help="do dry run",
+        action="store_true",
+    )
+
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    _args = parse_commandline()
+
+    # pprint(_args)
+
+    Copier(dry_run=_args.dry).copy(src=_args.src, dst=_args.dst)
+
+    # c.copy_directory(
+    #     r"d:\projects\IAV\tuner_middleware\RF-CATCHER\recordings\DAB-DAB_S-ANHALT_to_SACHSEN_MDR",
+    #     r"o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR",
+    # )
+
+    # c.copy_file(
+    #     r"d:\projects\IAV\tuner_middleware\RF-CATCHER\recordings\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.127",
+    #     r"o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.127",
+    # )
