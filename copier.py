@@ -10,8 +10,7 @@ import json
 from datetime import datetime, timedelta
 import pytz
 import argparse
-import textwrap
-from pprint import pprint
+from version import __version__
 
 
 class CopyMode(Enum):
@@ -346,7 +345,7 @@ def parse_commandline() -> None:
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=textwrap.dedent("""resumable file copier"""),
+        description="""resumable file copier""",
     )
 
     # add expected arguments
@@ -356,6 +355,10 @@ def parse_commandline() -> None:
     parser.add_argument(
         "--dst", dest="dst", required=True, help="destination file or folder"
     )
+
+    # optional arguments
+    parser.add_argument('-v', '--version', action='version', version=f"{parser.description} {__version__}")
+
     parser.add_argument(
         "-d",
         "--dry",
@@ -370,17 +373,4 @@ def parse_commandline() -> None:
 
 if __name__ == "__main__":
     _args = parse_commandline()
-
-    # pprint(_args)
-
     Copier(dry_run=_args.dry).copy(src=_args.src, dst=_args.dst)
-
-    # c.copy_directory(
-    #     r"d:\projects\IAV\tuner_middleware\RF-CATCHER\recordings\DAB-DAB_S-ANHALT_to_SACHSEN_MDR",
-    #     r"o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR",
-    # )
-
-    # c.copy_file(
-    #     r"d:\projects\IAV\tuner_middleware\RF-CATCHER\recordings\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.127",
-    #     r"o:\TMOI_DataStorage\Tuner-Recordings\RF-Catcher\DAB-DAB_S-ANHALT_to_SACHSEN_MDR\DAB-DAB_S-ANHALT_to_SACHSEN_MDR.7z.127",
-    # )
