@@ -140,7 +140,12 @@ class Copier:
             self.__copy_directory(src=src, dest=dst)
 
     def _find_resume_position(
-        self, *, source_file: str, destination_file: str, total_size: int
+        self,
+        *,
+        source_file: str,
+        destination_file: str,
+        total_size_src: int,
+        total_size_dst: int,
     ) -> int:
         """
         Finds the position in the destination file where the content starts to be different (mostly zero bytes) compared to the source file.
@@ -149,7 +154,7 @@ class Copier:
         :return: Position (offset) to resume writing.
         """
 
-        _block_size = min(total_size, self.__block_size)
+        _block_size = min(total_size_src, self.__block_size)
 
         def is_block_different(f_src: BinaryIO, f_dst: BinaryIO, offset: int) -> bool:
             f_src.seek(offset)
@@ -160,22 +165,24 @@ class Copier:
             return block_src != block_dst
 
         def is_file_equal(f_src: BinaryIO, f_dst: BinaryIO, file_size: int) -> bool:
-            _mismatch_start = is_block_different(f_src, f_dst, file_size - _block_size)
-            _mismatch_end = is_block_different(f_src, f_dst, 0)
-            return _mismatch_start or _mismatch_start
+            _mismatch_start = is_block_different(f_src, f_dst, 0)
+            _mismatch_end = is_block_different(f_src, f_dst, file_size - _block_size)
+            return not _mismatch_start and not _mismatch_end
 
         start = 0
-        end = total_size
+        end = total_size_dst
 
         with open(destination_file, "rb") as f_dst:
             with open(source_file, "rb") as f_src:
-                if not is_file_equal(f_src, f_dst, total_size):
+                if not is_file_equal(f_src, f_dst, total_size_dst):
                     while start + 1 < end:
                         mid = (start + end) // 2
                         if is_block_different(f_src, f_dst, mid):
                             end = mid
                         else:
                             start = mid
+                elif total_size_src > total_size_dst:
+                    start = total_size_dst
                 else:
                     start = -1
 
@@ -231,13 +238,17 @@ class Copier:
         :param source_file: Path to the source file.
         :param destination_file: Path to the destination file.
         """
-        total_size = os.path.getsize(src)
+        total_size_src = os.path.getsize(src)
+        total_size_dst = os.path.getsize(dst)
 
         # Determine the resume position
         if os.path.exists(dst):
             print(f"Files exists remotely, find resume position {dst}")
             resume_position = self._find_resume_position(
-                source_file=src, destination_file=dst, total_size=total_size
+                source_file=src,
+                destination_file=dst,
+                total_size_src=total_size_src,
+                total_size_dst=total_size_dst,
             )
         else:
             print(f"Files does not exist remotely {dst}")
@@ -251,7 +262,7 @@ class Copier:
             pass
             # print(f"File is new: {os.path.basename(dst)}")
         else:
-            _percentage = int((resume_position * 100) // total_size)
+            _percentage = int((resume_position * 100) // total_size_src)
             print(f"File is incomplete ({_percentage:02d}%): {os.path.basename(dst)}")
 
         if self.__dry_run:
@@ -263,7 +274,7 @@ class Copier:
             os.makedirs(destination_dir)
 
         print(
-            f"File {os.path.basename(src)} mismatch. Start copying from {resume_position=} {total_size=}"
+            f"File {os.path.basename(src)} mismatch. Start copying from {resume_position=} {total_size_src=}"
         )
         # return
 
@@ -288,7 +299,7 @@ class Copier:
                 f_dst.write(chunk)
                 _length_chunk = len(chunk)
                 copied_size += _length_chunk
-                progress = (copied_size * 100) // total_size
+                progress = (copied_size * 100) // total_size_src
                 copied_size_since_last_progress_shown += _length_chunk
 
                 if progress != last_shown_progress and not self.__abort:
@@ -303,7 +314,7 @@ class Copier:
                     transfer_rate = self.__transfer_rate_median.median()
 
                     remaining_time = (
-                        (total_size - copied_size) / (transfer_rate * 1024 * 1024)
+                        (total_size_src - copied_size) / (transfer_rate * 1024 * 1024)
                         if transfer_rate > 0
                         else float("inf")
                     )

@@ -1,0 +1,111 @@
+name: Build and Release Python Binary
+
+on:
+    push:
+        tags:
+            - "v*" # Trigger only on tag pushes with version-like names
+
+jobs:
+    create_release_linux:
+        runs-on: ubuntu-latest
+        outputs:
+            upload_url: ${{ steps.create_release_linux.outputs.upload_url }}
+        steps:
+            - name: Create Release
+              id: create_release_linux
+              uses: actions/create-release@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: ${{ github.ref }}
+                  release_name: Release ${{ github.ref }}
+                  draft: false
+                  prerelease: false
+
+    build-linux:
+        needs: create_release_linux
+        runs-on: ubuntu-latest
+
+        steps:
+            # Step 1: Checkout the code
+            - name: Checkout Code
+              uses: actions/checkout@v3
+
+            # Step 2: Set up Python
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.x" # Replace with your Python version
+
+            # Step 3: Install dependencies
+            - name: Install Dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install pyinstaller
+                  pip install -r requirements.txt
+
+            # Step 4: Build the binary
+            - name: Build Binary
+              id: build
+              run: |
+                  pyinstaller --clean --onefile --version-file="version.rc"  --console copier.py
+
+            # Step 5: Create tar.gz Archive
+            - name: Create tar.gz Archive
+              run: |
+                  tar -czvf copier_linux.tgz -C dist copier
+
+            # Step 6: Upload the binary as a release asset
+            - name: Upload Binary
+              uses: actions/upload-release-asset@v1
+              with:
+                  upload_url: ${{ needs.create_release_linux.outputs.upload_url }}
+                  asset_path: ./copier_linux.tgz # Path to the binary
+                  asset_name: copier_linux.tgz # Name of the binary file
+                  asset_content_type: application/octet-stream
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    build-windows:
+        needs: create_release_linux
+        runs-on: windows-latest
+
+        steps:
+            # Step 1: Checkout the code
+            - name: Checkout Code
+              uses: actions/checkout@v3
+
+            # Step 2: Set up Python
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.x" # Replace with your Python version
+
+            # Step 3: Install dependencies
+            - name: Install Dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install pyinstaller
+                  pip install -r requirements.txt
+
+            # Step 4: Build the binary
+            - name: Build Binary
+              id: build
+              run: |
+                  pyinstaller --clean --onefile --version-file="version.rc"  --console copier.py
+
+            # Step 5: Create Zip Archive
+            - name: Create Zip Archive
+              run: |
+                  Compress-Archive -Path dist\copier.exe -DestinationPath copier_win.zip
+
+            # Step 6: Upload the binary as a release asset
+            - name: Upload Binary
+              uses: actions/upload-release-asset@v1
+              with:
+                  upload_url: ${{ needs.create_release_linux.outputs.upload_url }}
+                  asset_path: ./copier_win.zip # Path to the binary
+                  asset_name: copier_win.zip # Name of the binary file
+                  asset_content_type: application/octet-stream
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

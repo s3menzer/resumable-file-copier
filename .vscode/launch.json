@@ -11,6 +11,18 @@
             "justMyCode": true,
             "env": {},
             "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "copier",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "copier.py",
+            "console": "integratedTerminal",
+            "purpose": ["debug-test"],
+            "justMyCode": true,
+            "env": {},
+            "envFile": "${workspaceFolder}/.env",
+            "args": ["--src", "d:\\projects\\IAV\\tuner_middleware\\RF-CATCHER\\recordings\\DAB-DAB_RADIO_21_BS_HANOVER.rfcatcher", "--dst", "o:\\TMOI_DataStorage\\Tuner-Recordings\\RF-Catcher", "--dry"]
         }
     ]
 }
