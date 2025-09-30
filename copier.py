@@ -35,11 +35,7 @@ class DirectoryCache:
     def serialize_to_file(self):
         # Convert datetime to UNIX timestamp (milliseconds as uint64)
         _cutoff = datetime.now(tz=pytz.UTC) - timedelta(weeks=self._max_age_in_weeks)
-        _data_serialized = {
-            key: value
-            for key, value in self._cache.items()
-            if value > _cutoff.timestamp()
-        }
+        _data_serialized = {key: value for key, value in self._cache.items() if value > _cutoff.timestamp()}
         with open(self._file_name, "w") as file:
             json.dump(_data_serialized, file, indent=4)
 
@@ -54,9 +50,7 @@ class DirectoryCache:
 
         return {}
 
-    def is_done(
-        self, *, source_file, destination_file: str, copy_mode: CopyMode
-    ) -> FileStatus:
+    def is_done(self, *, source_file, destination_file: str, copy_mode: CopyMode) -> FileStatus:
         _ts_cache = self._cache.get(destination_file, 0.0)
 
         if copy_mode == CopyMode.NEW_FILES_ONLY:
@@ -128,14 +122,10 @@ class Copier:
 
     def copy(self, *, src: str, dst: str) -> None:
         if os.path.isfile(src):
-            _dest = (
-                os.path.join(dst, os.path.basename(src)) if os.path.isdir(dst) else dst
-            )
+            _dest = os.path.join(dst, os.path.basename(src)) if os.path.isdir(dst) else dst
             self.copy_file(src=src, dst=_dest)
         elif os.path.isfile(dst):
-            print(
-                f"Error: destination has to be a directory name since source is a directory"
-            )
+            print(f"Error: destination has to be a directory name since source is a directory")
         else:
             self.__copy_directory(src=src, dest=dst)
 
@@ -202,9 +192,7 @@ class Copier:
                         return
 
                     _file_path_src = os.path.normpath(os.path.join(_root, _file))
-                    _file_path_dest = os.path.normpath(
-                        os.path.join(dest, _rel_path_src, _file)
-                    )
+                    _file_path_dest = os.path.normpath(os.path.join(dest, _rel_path_src, _file))
 
                     _src_file_rel = os.path.normpath(os.path.join(_rel_path_src, _file))
                     _file_status = self.__directory_cache.is_done(
@@ -239,10 +227,10 @@ class Copier:
         :param destination_file: Path to the destination file.
         """
         total_size_src = os.path.getsize(src)
-        total_size_dst = os.path.getsize(dst)
 
         # Determine the resume position
         if os.path.exists(dst):
+            total_size_dst = os.path.getsize(dst)
             print(f"Files exists remotely, find resume position {dst}")
             resume_position = self._find_resume_position(
                 source_file=src,
@@ -273,14 +261,10 @@ class Copier:
         if not os.path.exists(destination_dir):
             os.makedirs(destination_dir)
 
-        print(
-            f"File {os.path.basename(src)} mismatch. Start copying from {resume_position=} {total_size_src=}"
-        )
+        print(f"File {os.path.basename(src)} mismatch. Start copying from {resume_position=} {total_size_src=}")
         # return
 
-        with open(src, "rb") as f_src, open(
-            dst, "r+b" if resume_position > 0 else "wb"
-        ) as f_dst:
+        with open(src, "rb") as f_src, open(dst, "r+b" if resume_position > 0 else "wb") as f_dst:
             # Skip to the resume position in both files
             if resume_position > 0:
                 f_src.seek(resume_position)
@@ -304,20 +288,11 @@ class Copier:
 
                 if progress != last_shown_progress and not self.__abort:
                     elapsed_time = time.time() - start_time
-                    transfer_rate = (
-                        (copied_size_since_last_progress_shown / (1024 * 1024))
-                        / elapsed_time
-                        if elapsed_time > 0
-                        else 0
-                    )
+                    transfer_rate = (copied_size_since_last_progress_shown / (1024 * 1024)) / elapsed_time if elapsed_time > 0 else 0
                     self.__transfer_rate_median.add(transfer_rate)
                     transfer_rate = self.__transfer_rate_median.median()
 
-                    remaining_time = (
-                        (total_size_src - copied_size) / (transfer_rate * 1024 * 1024)
-                        if transfer_rate > 0
-                        else float("inf")
-                    )
+                    remaining_time = (total_size_src - copied_size) / (transfer_rate * 1024 * 1024) if transfer_rate > 0 else float("inf")
 
                     remaining_minutes, remaining_seconds = divmod(remaining_time, 60)
 
@@ -325,9 +300,7 @@ class Copier:
                     start_time = time.time()
                     copied_size_since_last_progress_shown = 0
 
-                    print(
-                        f"Progress: {progress:3d}% | Transfer rate: {transfer_rate:5.2f} MB/s | Remaining time: {int(remaining_minutes):02d}:{int(remaining_seconds):02d}"
-                    )
+                    print(f"Progress: {progress:3d}% | Transfer rate: {transfer_rate:5.2f} MB/s | Remaining time: {int(remaining_minutes):02d}:{int(remaining_seconds):02d}")
 
         if not self.__abort:
             self.__directory_cache.set_done(source_file=src, destination_file=dst)
@@ -360,15 +333,11 @@ def parse_commandline() -> None:
     )
 
     # add expected arguments
-    parser.add_argument(
-        "--src", dest="src", required=True, help="source file or folder"
-    )
-    parser.add_argument(
-        "--dst", dest="dst", required=True, help="destination file or folder"
-    )
+    parser.add_argument("--src", dest="src", required=True, help="source file or folder")
+    parser.add_argument("--dst", dest="dst", required=True, help="destination file or folder")
 
     # optional arguments
-    parser.add_argument('-v', '--version', action='version', version=f"{parser.description} {__version__}")
+    parser.add_argument("-v", "--version", action="version", version=f"{parser.description} {__version__}")
 
     parser.add_argument(
         "-d",
